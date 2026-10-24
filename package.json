@@ -1,0 +1,10 @@
+{
+  "name": "lusion-clone",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local mirror of the lusion.co production site (Astro + custom Three.js engine).",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}
