@@ -10,50 +10,73 @@ npm start
 # → http://localhost:4173
 ```
 
-Node 18+. There is no build step. Change the port with `PORT=8080 npm start`.
+Node 18+. There is no build step and no dependencies. Change the port with `PORT=8080 npm start`, or run `node server.mjs` directly.
 
 ---
 
-## What is in here
+## Contents
 
-| Path | Contents |
-| --- | --- |
-| `public/` | The production build of the site: HTML, CSS, the compiled app bundle, and all 602 files (≈208 MB) |
-| `public/_astro/about.CNa9RfUh.css` | The complete design system / all page styles |
-| `public/_astro/hoisted.CUO_IjfL.js` | The compiled application: UI + Three.js engine (~1.2 MB) |
-| `public/assets/` | Fonts, models, textures, audio, project videos/images, team data, logos, favicons |
-| `screenshots/` | Reference captures of the running mirror (desktop + mobile) |
-| `server.mjs` | Static server with extensionless-route resolution and HTTP range support for video |
-| `package.json` | `npm start` only; no dependencies |
+| Path | Size | Contents |
+| --- | --- | --- |
+| `public/` | 208 MB / 602 files | The production build: 22 HTML documents, 1 stylesheet, 1 compiled module, all assets |
+| `public/_astro/about.CNa9RfUh.css` | 90 KB | The complete design system and every page style |
+| `public/_astro/hoisted.CUO_IjfL.js` | 1.25 MB | The compiled application: DOM UI + Three.js engine |
+| `public/assets/projects/` | 186 MB | 19 project folders: posters, depth maps, galleries, case-study video |
+| `public/assets/textures/` | 14 MB | Matcaps, gradients, mattes, SMAA lookup tables, tunnel decals |
+| `public/assets/models/` | 3.4 MB | 55 custom `.buf` geometry/animation buffers |
+| `public/assets/audios/` | 1.3 MB | 16 `.ogg` UI, page, focus and cinematic sounds |
+| `public/assets/team/` | 640 KB | 7 team face meshes + `team.json` |
+| `public/assets/fonts/` | 452 KB | Aeonik, IBM Plex Mono, LusionMono (`.woff` + `.woff2`) |
+| `public/assets/images/` | 168 KB | Client logos, card back, arrow icons |
+| `public/assets/meta/` | 152 KB | Favicons, web manifest, social share image |
+| `screenshots/` | 13 MB | Reference captures of the running mirror |
+| `server.mjs` | 91 lines | Static server: extensionless routes, MIME types, HTTP range requests |
+| `package.json` | — | `npm start` only |
 
-The original site switches its media base to `https://lusion.dev` when served on `lusion.co`. That CDN switch has been removed, so every asset resolves relative to `/assets/...` and the copy runs entirely offline with no URL rewriting.
+File mix inside `public/`:
 
-**Still external:** Vimeo embeds on *Atlas Motion* and *Spaace*, Google Analytics, and the newsletter form endpoint. Everything else is local.
+```
+398 .webp   55 .buf    49 .mp4   22 .html  20 .png  18 .svg
+ 16 .ogg     6 .woff2   6 .woff   3 .jpg    2 .ico   2 .exr
+  1 .webmanifest  1 .txt  1 .json  1 .js  1 .css
+```
 
 ---
 
 ## Routes
 
+| URL | Document | Page class |
+| --- | --- | --- |
+| `/` | `public/index.html` | `HomePage` |
+| `/about` | `public/about/index.html` | `AboutPage` |
+| `/projects` | `public/projects/index.html` | `ProjectsPage` |
+| `/projects/:slug` | `public/projects/:slug/index.html` | `ProjectPage` |
+
+Project slugs (19):
+
 ```
-/                         Home
-/about                    About
-/projects                 Projects index (19 projects)
-/projects/:slug           Project case study
+atlas_motion            infinite_passerella      soda_experience
+choo_choo_world         lumina_labs              spaace
+ddd_2024                maxmara_bearings_gifts   spatial_fusion
+devin_ai                my_little_story_book     synthetic_human
+everswap                of_the_oak               the_turn_of_the_screw
+oryzo_ai                porsche_dream_machine    worldcoin
+                                                 zero_tech
 ```
 
-Project slugs:
+Every project page is a real, server-rendered document. Direct navigation and refresh work; the client router only takes over for in-app clicks.
 
-```
-atlas_motion          infinite_passerella       soda_experience
-choo_choo_world       lumina_labs               spaace
-ddd_2024              maxmara_bearings_gifts    spatial_fusion
-devin_ai              my_little_story_book      synthetic_human
-everswap              of_the_oak                the_turn_of_the_screw
-                      oryzo_ai                  worldcoin
-                      porsche_dream_machine     zero_tech
-```
+---
 
-The server resolves `/about` → `public/about/index.html` and `/projects/oryzo_ai` → `public/projects/oryzo_ai/index.html`, so the site's absolute links and its XHR page-preloading both work unchanged.
+## How the server works
+
+`server.mjs` is intentionally tiny — it does three things:
+
+1. **Route resolution.** `/about` tries `public/about`, then `public/about.html`, then `public/about/index.html`. `/projects/oryzo_ai` resolves the same way. Trailing-slash URLs go straight to `index.html`.
+2. **MIME types.** Explicit map for HTML, CSS, JS, JSON, SVG, images, fonts, `.mp4`, `.ogg`, `.buf`, `.exr`.
+3. **Range requests.** Videos are served with `206 Partial Content`, `Content-Range`, `Accept-Ranges: bytes` and a read stream, so seeking and looping work like a normal host.
+
+Path traversal is blocked by normalising the resolved path and checking it still starts with `public/`. Responses use `cache-control: no-cache` so edits show up on refresh.
 
 ---
 
@@ -62,18 +85,70 @@ The server resolves `/about` → `public/about/index.html` and `/projects/oryzo_
 ### Stack
 
 - **Astro** static output: one HTML document per route, one global stylesheet, one compiled module script.
-- **Three.js r158** plus a large custom engine — no React/Next, no GSAP, no Lenis, no Howler. Scrolling, routing, transitions, audio, and post-processing are all hand-written.
+- **Three.js r158** plus a large custom engine. No React/Next, no GSAP, no Lenis, no Howler — scrolling, routing, transitions, audio and post-processing are all hand-written.
 - **WebGL2** single full-screen canvas (`#canvas`) behind a DOM UI layer (`#ui`).
-- Custom binary `.buf` files for geometry/animation, `.exr` matcaps, `.ogg` positional audio, `.mp4` video textures.
+- Custom binary `.buf` files for geometry and animation, `.exr` matcaps, `.ogg` positional audio, `.mp4` video textures, `.webp` image textures.
 
-### Runtime flow
+### Boot sequence
 
-1. **Preloader** — loads the page's models, textures, audio, and fonts while animating the percentage digits.
-2. **App bootstrap** — creates `PageManager`, `RouteManager`, `ScrollManager`, `Header`, `Preloader`, and `GlobalAudios`.
-3. **Virtual scroll** — the home page is ~51,555 px tall, but the window itself never scrolls. Wheel/touch input is damped and applied to a translated `#page-container`; sections are laid out inside it. This is what produces the slow, weighted feel and the tiny progress bar.
-4. **Page composition** — `PageManager` owns `HomePage`, `AboutPage`, `ProjectsPage`, and `ProjectPage`. Each page composes section classes and a WebGL scene.
-5. **Routing** — links are intercepted; the next page's HTML is fetched in the background, then a WebGL transition overlay swaps scenes. Direct URLs are server-rendered, so refresh/deep-link works.
-6. **Render loop** — one `requestAnimationFrame` loop updates scroll, page, sections, shaders, post-processing (Bloom, Blur, SMAA), audio, and DOM sync.
+1. `preRun()` registers the `FontItem` loader type, initialises `routeManager`, adds the Aeonik font, and starts the loader.
+2. **Preloader** loads the current page's models, textures, audio and fonts, animating the percentage digits in `#preloader-percent-digits`.
+3. When progress hits `1`, `run()` builds the app: `properties`, `PageManager`, `RouteManager`, `ScrollManager`, `Header`, `Preloader`, `GlobalAudios`, `videoOverlay`.
+4. The page class composes its sections and WebGL scene; `is-ready` is added to `<html>` and the preloader fades out.
+
+### Render loop
+
+One `requestAnimationFrame` loop per frame:
+
+```
+input → scrollManager → pageManager → active page → sections → shaders →
+post-processing (Bloom → Blur → SMAA) → audio → DOM transform sync
+```
+
+`properties` is the shared state hub: viewport size, DPR, time, `useMobileLayout`, `hasStarted`, shared uniforms, the post-processing queue.
+
+### Virtual scroll
+
+The window itself never scrolls. `ScrollManager` owns a damped pixel value:
+
+- Wheel/touch deltas feed a target; the current value eases toward it every frame.
+- `#page-container` is translated by the eased value.
+- `ScrollDomRange` objects measure each section once and report `screenRatio`, `screenY`, `isActive` as it moves.
+- The home page is **~51,555 px** tall at 1440×900. The thin `#scroll-indicator-bar` is the only native-feeling scroll cue.
+
+This is what produces the slow, weighted, cinematic feel — and why `page.mouse.wheel()` works in automation while `window.scrollTo()` does nothing.
+
+Home section heights at 1440×900:
+
+| Section | Height |
+| --- | --- |
+| `#home-hero` | 900 px |
+| `#home-reel` | 2,533 px |
+| `#home-featured` | 3,904 px |
+| `#home-goal` | 39,855 px |
+| `#end-section` | 3,150 px |
+| `#footer-section` | 900 px |
+| `#scroll-nav-section` | 313 px |
+
+### Routing and transitions
+
+- Internal links are intercepted by `RouteManager`.
+- The next document is fetched in the background while the current page is still live.
+- A WebGL overlay (render-target copy + wipe shader) covers the swap; the new page's sections mount underneath, then the overlay opens.
+- Scroll position, audio and the active page are reset on completion.
+
+### Page composition
+
+Each page class is a thin coordinator that owns its sections:
+
+| Page | Sections |
+| --- | --- |
+| `HomePage` | `HomeHeroSection`, `HomeReelSection`, `HomeFeaturedSection`, `HomeGoalSectionTunnelTitle`, `HomeBalloons*`, shared `EndSection`, `FooterSection`, `ScrollNavSection` |
+| `AboutPage` | `AboutHero` (letters, particles, rocks, fog, ground, halo, light field, lines, person), `AboutWhoSection` (we-are, details, team), `AboutClientSection`, `AboutAwardSection`, `AboutCapabilitySection` |
+| `ProjectsPage` | `ProjectsMainSection` + shared tail |
+| `ProjectPage` | `ProjectDetailsSection`, `ProjectDetailsScreen`, `ProjectDetailsItems` + shared tail |
+
+The shared tail (`PageExtraSections`) is identical on every page: the “let’s work together” end section, the footer, and the next-page scroll nav.
 
 ### Main classes in the bundle
 
@@ -81,26 +156,157 @@ The server resolves `/about` → `public/about/index.html` and `/projects/oryzo_
 | --- | --- |
 | App shell | `App`, `PageManager`, `RouteManager`, `ScrollManager`, `ScrollPane`, `ScrollDomRange`, `Preloader`, `Header`, `PageExtraSections` |
 | Pages | `HomePage`, `AboutPage`, `ProjectsPage`, `ProjectPage`, `PlaygroundPage` |
-| Home sections | `HomeHeroSection`, `HomeReelSection`, `HomeFeaturedSection`, `HomeGoalSectionTunnelTitle`, `HomeBalloons*`, `EndSection`, `FooterSection`, `ScrollNavSection` |
-| About sections | `AboutHero`, `AboutHeroLetters`, `AboutHeroParticles`, `AboutHeroParticlesSimulation`, `AboutHeroRocks`, `AboutHeroFog`, `AboutHeroGround`, `AboutHeroHalo`, `AboutHeroLightField`, `AboutWhoSection`, `AboutWhoLogo`, `AboutCapabilitySection`, `AboutClientSection`, `AboutAwardSection` |
-| Projects | `ProjectsMainSection`, `ProjectItem`, `ProjectItemList`, `ProjectDetailsSection`, `ProjectDetailsScreen`, `ProjectDetailsItems`, `ProjectDetailsItem` |
-| Engine | `Loader`, `BufItem`, `TextureItem`, `AudioItem`, `ShaderHelper`, `TextureHelper`, `CameraControls`, `PostProcess`, `Bloom`, `Blur`, `SMAA` |
+| Home sections | `HomeHeroSection`, `HomeReelSection`, `HomeFeaturedSection`, `HomeGoalSectionTunnelTitle`, `HomeBalloons`, `HomeBalloonsBody`, `HomeBalloonsPhysics`, `HomeBalloonsBackground`, `EndSection`, `FooterSection`, `ScrollNavSection` |
+| About hero | `AboutHero`, `AboutHeroLetters`, `AboutHeroParticles`, `AboutHeroParticlesSimulation`, `AboutHeroRocks`, `AboutHeroScatter`, `AboutHeroFog`, `AboutHeroGround`, `AboutHeroHalo`, `AboutHeroLight`, `AboutHeroLightField`, `AboutHeroLines`, `AboutHeroFaces`, `AboutPageHeroEfx` |
+| About content | `AboutWhoSection`, `AboutWhoLogo`, `WhoSubsectionWeAre`, `WhoSubsectionDetails`, `WhoSubsectionTeam`, `AboutCapabilitySection`, `AboutClientSection`, `AboutAwardSection` |
+| Projects | `ProjectsMainSection`, `ProjectItem`, `ProjectItemList`, `ProjectDetailsSection`, `ProjectDetailsScreen`, `ProjectDetailsItems`, `ProjectDetailsItem`, `ProjectDetailsData` |
+| Engine | `Loader`, `BufItem`, `TextureItem`, `AudioItem`, `FontItem`, `ShaderHelper`, `TextureHelper`, `UfxMesh`, `CameraControls`, `PostProcess`, `Bloom`, `Blur`, `SMAA`, `BrownianMotion` |
+| Audio | `Audios`, `AudioGroup`, `AudioItem`, `GlobalAudios`, `HomePageAudios`, `AboutPageAudios` |
 
-### Asset conventions
+### Header and menu
+
+`#header` has three zones:
+
+- **Left** — `#header-logo`, an inline SVG wordmark (`width: 7.5em`, colour driven by `--header-color` / `--project-details-highlight`).
+- **Centre** — `#header-center-project-back-btn`, only visible on project pages.
+- **Right** — sound toggle (`#header-right-sound-btn`, canvas waveform), “Let’s talk” (`mailto:`), menu button (`#header-right-menu-btn`).
+
+The menu is a DOM panel toggled with `--menu-opened` on `#header`: links, newsletter form, contact, and a Labs card. It is animated by the same render loop (no CSS transitions for the main motion).
+
+### Audio
+
+- `USE_AUDIO` is enabled only when the browser supports Ogg and is not mobile.
+- `GlobalAudios` owns UI sounds: hover, click, focus, page, glass, cinematic, generic.
+- Positional sounds use `PositionalAudio`; page-specific groups are created per page and disposed on route change.
+- The sound button reflects state; audio starts muted until the user interacts.
+
+### Post-processing
+
+A single `PostProcess` queue runs after the scene render:
+
+- **Bloom** — threshold/radius/strength per page (`AboutHero` pushes the amount to 4).
+- **Blur** — used by the reel and transitions.
+- **SMAA** — edge AA using the bundled `smaa-area.png` / `smaa-search.png` lookup textures.
+
+`UfxMesh` is the bridge between DOM and WebGL: it reads a DOM element's rect (`syncDom`), renders a plane with a custom shader into the same screen position, and is used for the project cards, the About wordmark, the reel and the footer effects.
+
+---
+
+## Page anatomy
+
+### Home
+
+| Section | What happens |
+| --- | --- |
+| `#home-hero` | Full-bleed WebGL scene of glossy 3D crosses (`.exr` matcaps, bloom). The intro copy and “Scroll to explore” sit above it. |
+| `#home-reel` | Showreel panel with a video texture, play button, corner decorations, hover ripples. |
+| `#home-featured` | Featured project cards with depth-mapped hover previews and per-project colour themes. |
+| `#home-goal` | ~40,000 px tunnel: camera flies through a generated grid tunnel with stickers, astronaut geometry, line meshes and a giant “GOAL” title sequence. |
+| `#end-section` | Shared CTA: “Let’s work together”, project enquiry link. |
+| `#footer-section` | Address, socials, enquiries, newsletter, copyright, back-to-top. |
+| `#scroll-nav-section` | Next-page hand-off with a progress bar and a large page name. |
+
+### About
+
+| Block | What happens |
+| --- | --- |
+| `#about-hero` | Particle/rock landscape with a person mesh, fog, halo and light field; the camera follows a spline (`camera_spline.buf`). |
+| `#about-who` | “WE ARE **LUMINA**”: the big wordmark is a WebGL mesh that rises letter-by-letter, then morphs into the small inline SVG next to “WE ARE”. Below: studio copy and a team carousel with 3D face meshes. |
+| `#about-clients` | Logo carousel of client marks. |
+| `#about-award` | Award list. |
+| `#about-capability` | Capability cards with 3D icons and staggered type. |
+
+### Projects
+
+- `#projects-main` renders the 19 cards in a 2-column grid (1-column on mobile).
+- Each card carries `data-color-bg`, `data-color-text`, `data-color-shadow` and `data-id`; hovering swaps the page theme and plays a depth-mapped preview.
+- Clicking routes to `/projects/:slug` through the WebGL transition.
+
+### Project detail
+
+- Hero title, meta, description, services and external links.
+- `ProjectDetailsItems` lays out the case-study media (images and videos) with sticky preview panels and a progress bar.
+- Each page injects its palette via `data-color-*` on the `<html>` / `<body>` wrapper.
+
+---
+
+## Asset pipeline
+
+### `.buf` format
+
+All geometry and animation is stored in a custom binary container:
 
 ```
-assets/
-├─ fonts/       Aeonik (400/500/italic), IBM Plex Mono (400/500), LusionMono
-├─ models/      .buf — custom packed geometry + animation buffers
-├─ textures/    .webp / .png / .exr (matcaps, heightmaps, mattes, SMAA)
-├─ audios/      .ogg — UI, page, focus, cinematic, positional
-├─ projects/    <slug>/home.webp, home_depth.webp, image*.webp, video*.mp4
-├─ team/        <member>.buf + team.json
-├─ images/      logos, card backs, icons
-└─ meta/        favicons, web manifest, social image
+[ uint32 LE jsonLength ][ json header ][ attribute data ... ]
 ```
 
-Images/videos have desktop and mobile variants (`mobile_image*.webp`, `mobile_video*.mp4`); the engine swaps them using `browser.isMobile`.
+Header:
+
+```json
+{
+  "vertexCount": 98,
+  "indexCount": 264,
+  "attributes": [
+    { "id": "indices",  "needsPack": false, "componentSize": 1, "storageType": "Uint16Array" },
+    { "id": "position", "needsPack": true,  "componentSize": 3, "storageType": "Uint16Array",
+      "packedComponents": [
+        { "from": 0, "delta": 1 },
+        { "from": 0, "delta": 0.18761626361945258 },
+        { "from": 0, "delta": 1 }
+      ] },
+    { "id": "char", "needsPack": false, "componentSize": 1, "storageType": "Uint8Array" }
+  ],
+  "meshType": "Mesh"
+}
+```
+
+- Attributes are concatenated in header order; each is read as a typed array view at the running offset.
+- `needsPack: true` dequantises each component with `(raw / max) * delta + from` into a `Float32Array`.
+- `meshType` is `Mesh`, `LineSegments` or `Points`.
+- Optional `sceneData` splits one file into named sub-meshes with their own transform.
+
+`BufItem` loads the file as an `ArrayBuffer`, parses the header, builds a `BufferGeometry`, and hands it to the loader.
+
+### Textures and media
+
+| Kind | Convention |
+| --- | --- |
+| Project poster | `projects/<slug>/home.webp` |
+| Hover depth map | `projects/<slug>/home_depth.webp` |
+| Gallery image | `projects/<slug>/image_1.webp`, `image_2.webp`, … |
+| Gallery video | `projects/<slug>/main.mp4`, `launch.mp4`, `bts.mp4`, … |
+| Mobile image | `projects/<slug>/mobile_image_1.webp`, … |
+| Mobile video | `projects/<slug>/mobile_video_1.mp4`, … |
+| Matcap / gradient | `textures/**/*.exr`, `textures/**/*.png` |
+| SMAA lookup | `textures/smaa-area.png`, `textures/smaa-search.png` |
+
+The engine swaps `image` → `mobile_image` and `video` → `mobile_video` automatically when `browser.isMobile` is true. Low-detail variants (`*_ld`, `*_low`) are used on small screens or while loading.
+
+### Audio
+
+```
+audios/
+├─ hover_0..2.ogg      UI hover
+├─ click_0..1.ogg      UI click
+├─ focus_0..2.ogg      focus / selection
+├─ page_0..1.ogg       page transitions
+├─ cinematic_0..3.ogg  About / tunnel beds
+├─ generic.ogg         ambient loop
+├─ generic_end.ogg     ambient tail
+└─ glass_broken.ogg    transition accent
+```
+
+### Fonts
+
+| File | Use |
+| --- | --- |
+| `Aeonik-Regular` / `Aeonik-Medium` / `Aeonik-RegularItalic` | All UI and display type |
+| `IBMPlexMono-Regular` / `IBMPlexMono-Medium` | Labels, metadata, small caps |
+| `LusionMono` | Monospaced accents (footer, capability cards) |
+
+### Team
+
+`team.json` lists seven members (`edan`, `ffi`, `pierre`, `yannic`, `paul`, `andrii`, `sunny`) with name and role. Each has a `.buf` face mesh used by the About team carousel.
 
 ---
 
@@ -126,7 +332,9 @@ All tokens live at the top of `public/_astro/about.CNa9RfUh.css`.
 | `--color-purple` | `#8832f7` | Synthetic Human accent |
 | `--color-error` | `#e90000` | Form errors |
 
-Project pages inject their own theme through `data-color-*` attributes:
+### Project themes
+
+Each project page injects its own palette through `data-color-*` attributes:
 
 | Project | Background | Text | Accent |
 | --- | --- | --- | --- |
@@ -158,47 +366,167 @@ Project pages inject their own theme through `data-color-*` attributes:
 | **IBM Plex Mono** | 400, 500 | Technical labels, metadata, small caps |
 | **LusionMono** | 400 | Custom monospaced accents |
 
-Display sizes are viewport-driven (`19.5vw` hero, `10vw`, `6.7vw`, `7.5em`); labels are uppercase mono with tight tracking. Body copy is small, high-contrast, and generously leaded.
+Display sizes are viewport-driven (`19.5vw` hero, `10vw`, `6.7vw`, `7.5em`); labels are uppercase mono with tight tracking. Body copy is small, high-contrast and generously leaded.
 
 ### Layout
 
 ```css
 --grid-space: calc((100% - 11 * var(--grid-gap)) / 12); /* 12 columns */
---grid-gap: 2vw;                                       /* 4vw on smaller screens */
+--grid-gap: 2vw;                                       /* 4vw below 1000px */
 --base-padding-x: max(5vw, 40px);                      /* 6vw / 60px ≥1600px */
 --base-padding-y: clamp(30px, 4vw, 50px);
 --global-border-radius: 20px;                          /* 15px / 10px at breakpoints */
 ```
 
-Breakpoints: `1600`, `1200`, `1000`, `812`, `560`, `480`, `400`, `380` px. Sections are full-viewport panels with generous negative space; the 3D canvas is always behind, and DOM content floats above it with mix-blend/contrast rules.
+Breakpoints and queries used:
+
+```
+min-width: 1600px
+max-width: 1200px
+max-width: 1000px
+max-width: 812px
+max-width: 560px
+max-width: 480px
+max-width: 400px
+max-width: 380px
+max-height: 650px
+min-aspect-ratio: 21/9
+hover: hover
+```
+
+Sections are full-viewport panels with generous negative space. The 3D canvas is always behind; DOM content floats above it with mix-blend and contrast rules.
 
 ### Motion language
 
-- Damped virtual scroll (wheel/touch) rather than native scrolling — slow, heavy, cinematic.
+- Damped virtual scroll instead of native scrolling — slow, heavy, cinematic.
 - Preloader with animated percentage; WebGL wipe transitions between routes.
 - Scroll-driven camera moves, tunnel fly-throughs, particle fields, morphing typography.
-- Hover-reactive project cards with 3D previews and depth maps.
-- Custom cursor, magnetic buttons, and UI sound effects on hover/click.
+- Letter-by-letter reveals and per-letter stagger (`char` attribute in the wordmark shader).
+- Hover-reactive project cards with depth-mapped previews and theme swaps.
+- Custom cursor, magnetic buttons, UI sound effects on hover/click.
 - Post-processing: bloom, blur, SMAA; `.exr` matcaps for the glossy 3D crosses.
+
+---
+
+## The Lumina Studio rebrand
+
+Everything below was done **without a build step**, by editing the shipped HTML, CSS, JS and binary assets.
+
+### Text and metadata
+
+| Before | After |
+| --- | --- |
+| `Lusion - …` titles / descriptions | `Lumina Studio - …` |
+| `LUSION Creative Studio` | `LUMINA Studio` |
+| `Built by Lusion with ❤️` | `Built by Lumina Studio ❤️` |
+| `hello@lusion.co` / `business@lusion.co` | `hello@luminastudio.co` / `business@luminastudio.co` |
+| `labs.lusion.co` | `labs.luminastudio.co` |
+| `lusionltd` socials | `luminastudio` |
+| `https://lusion.co` (OG / canonical) | `https://luminastudio.co` |
+| `Lusion Labs` | `Lumina Labs` |
+| console credit | `Created by Lumina Studio: https://luminastudio.co/` |
+
+The CDN switch (`location.hostname === "lusion.co"` → `https://lusion.dev`) was removed so `CDN_PATH` stays empty and all assets resolve relatively on any host.
+
+### Header and About wordmark
+
+The original wordmark was Aeonik Medium with ~48 font units of tracking. The new **LUMINA** path was generated from `Aeonik-Medium.woff` with `opentype.js`, using the same cap height and tracking, then normalised to its bounding box:
+
+- Header SVG: `viewBox="0 0 3763 706"`, same `mix-blend-mode: exclusion` wrapper and `currentColor` fill.
+- About static SVG: same path and viewBox.
+- Result: 3,763 × 706 units, aspect **5.330**.
+
+### 3D wordmark (`logo_text.buf`)
+
+The About page's big wordmark is not an SVG — it is a WebGL mesh rendered by `AboutWhoLogo` from `public/assets/models/about/logo_text.buf`. That file was regenerated for LUMINA:
+
+1. Extract glyph outlines for `L, U, M, I, N, A` from Aeonik Medium.
+2. Flatten curves, detect counters (the `A` hole), triangulate with `earcut`.
+3. Emit the same `.buf` layout: `indices` (Uint16), packed `position` (Uint16, x/y/z deltas), `char` (Uint8, one value per letter).
+4. Normalise to x `0..1`, y `0..1/aspect` (0 at the bottom), z `0.92..1.0` so the shader's `fwidth` alpha stays fully opaque.
+5. Update `u_aspect` in the bundle from `1/.200957` to `5.330028328611898`, and both About SVG viewBoxes to match.
+
+The result is 98 vertices / 88 triangles (the original LUSION mesh was 1,400 / 6,270 because of its curved `S` and `O`).
+
+The shader still does its original job: letters rise from below on entry, then morph into the small inline SVG position as you scroll, staggered per letter via the `char` attribute.
+
+### Other assets
+
+- `lusion_labs` → `lumina_labs` for the project folder, asset folder, links and `data-id`.
+- `assets/meta/site.webmanifest` name and short name updated.
+- `robots.txt` sitemap host updated.
+- `assets/meta/social_sharing.jpg` regenerated at 1200×630 from the home hero render with a centred LUMINA wordmark.
+- Favicons kept: the mark is a simple geometric “L”, which still reads as Lumina.
+
+Technical identifiers that were intentionally **not** renamed: the `LusionMono` font family and its files, the `ease.lusion` easing function, and third-party links whose URLs happen to contain `lusion` (Awwwards, FWA, Porsche Newsroom).
 
 ---
 
 ## Verification
 
-Captured and checked at 1440×900 and iPhone 13:
+Checked at 1440×900 and 390×844 (iPhone 13):
 
-- Home, About, Projects, and all 19 project pages load with zero local 404s.
-- Home scroll sections, footer, and next-page hand-off render.
-- Header menu, project-card routing, and back navigation work.
-- All local images, videos, fonts, models, and audio resolve.
-- Only external failures are the two Vimeo embeds (Vimeo-side 404) and analytics — not local assets.
+- Home, About, Projects and all 19 project pages return `200` with **zero local 404s**.
+- All 22 documents start with `Lumina Studio` in `<title>`.
+- Home scroll sections, reel, featured cards, tunnel, end section, footer and next-page hand-off render.
+- About hero particles, the 3D wordmark, the small inline wordmark, team carousel and capability cards render.
+- Header menu opens, project-card routing works, back button returns.
+- Videos serve range requests and loop; audio loads; fonts load.
+- Console credit prints the new brand.
+- Mobile layout swaps to `mobile_*` assets and renders correctly.
 
-Reference images are in `screenshots/`.
+Reference images in `screenshots/`:
+
+```
+home-hero.png          home-tunnel.png        about-hero.png
+projects.png           project-oryzo-ai.png   menu.png
+mobile-home.png
+```
 
 ---
 
-## Notes
+## Known limitations
 
-- This is a **mirrored production build**, not the original Astro source. The original components, shaders, and build config are not public. The HTML is fully editable, but rebuilding from components would require the original source.
-- The underlying content, case-study media, and 3D assets remain © Lusion Creative Studio. The Lumina Studio branding is a local rename for study/reference; this is not affiliated with or endorsed by Lusion.
-- The original site is © Lusion Creative Studio — https://lusion.co
+- **External, not mirrored:** the Vimeo embeds on *Atlas Motion* and *Spaace* (the Vimeo videos themselves return 404), Google Analytics, and the newsletter form endpoint (a Mailchimp list).
+- **Not the original source.** This is the production build. The Astro components, shader source files and build config are not public; the HTML/CSS/JS here are the compiled output.
+- **No sitemap.** `sitemap-index.xml` is not generated by the site; `robots.txt` still points at it.
+- **Large repo.** 208 MB of media. Cloning is slow; the repo is best kept private or used locally.
+- **Browser support.** WebGL2 is required. Without it the canvas stays empty (the DOM still renders).
+- **Autoplay.** Audio and some videos need a user gesture; headless testing uses `--autoplay-policy=no-user-gesture-required`.
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `EADDRINUSE` on start | Another server is on 4173 — `PORT=8080 npm start` or kill the old process |
+| Blank page, no 3D | Check WebGL2 support and the browser console for shader errors |
+| Route 404s | Make sure you are using `server.mjs` (or a host with extensionless route resolution), not a plain file server |
+| Videos do not seek | The host must support `Range` requests; `server.mjs` does |
+| Fonts look wrong | `public/assets/fonts/` must be served with `font/woff2` / `font/woff` MIME types |
+| Menu/project clicks do nothing in automation | The site uses custom hit-testing; call `element.click()` instead of synthetic mouse clicks |
+
+---
+
+## Editing guide
+
+| Want to change | Edit |
+| --- | --- |
+| Copy, titles, meta | the relevant `public/**/index.html` |
+| Colours, type, layout | `public/_astro/about.CNa9RfUh.css` (`:root` tokens at the top) |
+| Header logo | the inline SVG inside `#header-logo` in each HTML file |
+| About static wordmark | `#about-who-title-left-2 svg path` in `public/about/index.html` |
+| About 3D wordmark | `public/assets/models/about/logo_text.buf` + `u_aspect` in the bundle |
+| Project order / cards | `public/projects/index.html` (`data-id`, `data-color-*`, hrefs) |
+| Server behaviour | `server.mjs` |
+
+If you change the wordmark aspect, update **all three** in sync: the header SVG viewBox, the About SVG viewBox, and `u_aspect` in `hoisted.CUO_IjfL.js`.
+
+---
+
+## Credits
+
+- Original site, design, code, 3D work and case-study media: **Lusion Creative Studio** — https://lusion.co
+- This mirror is a local study/reference build, renamed to Lumina Studio. It is not affiliated with or endorsed by Lusion.
+- Fonts (Aeonik, IBM Plex Mono) and client logos remain the property of their respective owners.
